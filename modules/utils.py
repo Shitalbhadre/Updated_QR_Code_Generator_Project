@@ -1,3 +1,4 @@
+# utils.py
 import bcrypt
 from pymongo import MongoClient
 from datetime import datetime
@@ -6,9 +7,18 @@ from urllib.parse import quote_plus
 from bson.objectid import ObjectId
 
 # ----------------------------
-# MongoDB Atlas Connection
+# MongoDB Connection
 # ----------------------------
 def connect_mongo():
+    """
+    Connects to MongoDB Atlas and returns the database object.
+    Make sure your Streamlit secrets.toml contains:
+    [MONGO]
+    username = "your_username"
+    password = "your_password"
+    cluster = "your_cluster_address"
+    database = "qr_app"
+    """
     username = quote_plus(st.secrets["MONGO"]["username"])
     password = quote_plus(st.secrets["MONGO"]["password"])
     cluster = st.secrets["MONGO"]["cluster"]
@@ -18,7 +28,7 @@ def connect_mongo():
     client = MongoClient(MONGO_URI)
     return client[database]
 
-# Database & Collections
+# Connect to database and define collections
 db = connect_mongo()
 users_collection = db["users"]
 qrcodes_collection = db["qrcodes"]
@@ -35,35 +45,49 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed)
 
 # ----------------------------
-# User Functions
+# QR Code Functions
 # ----------------------------
-def get_all_users():
-    users = list(users_collection.find({}, {"username":1, "email":1, "role":1}))
-    for user in users:
-        user["id"] = str(user["_id"])
-        del user["_id"]
-    return users
+def add_qrcode(user_id: str, qr_type: str, content: str, file_path: str):
+    """
+    Add a new QR code for a user
+    """
+    qrcodes_collection.insert_one({
+        "user_id": ObjectId(user_id),
+        "type": qr_type,
+        "content": content,
+        "file_path": file_path,
+        "created_at": datetime.utcnow()
+    })
 
 def get_user_qrcodes(user_id: str):
+    """
+    Returns all QR codes for a specific user
+    """
     qrcodes = list(qrcodes_collection.find({"user_id": ObjectId(user_id)}))
     for qr in qrcodes:
         qr["id"] = str(qr["_id"])
         del qr["_id"]
     return qrcodes
 
-def add_qrcode(user_id, qr_data: dict):
+# ----------------------------
+# User Functions
+# ----------------------------
+def get_all_users():
     """
-    qr_data should be a dict with keys: type, content, file_path
+    Returns all users with id, username, email, and role
     """
-    qrcodes_collection.insert_one({
-        "user_id": ObjectId(user_id),
-        "qr_data": qr_data,
-        "created_at": datetime.utcnow()
-    })
+    users = list(users_collection.find({}, {"username":1, "email":1, "role":1}))
+    for user in users:
+        user["id"] = str(user["_id"])
+        del user["_id"]
+    return users
 
 # ----------------------------
-# Database Initialization
+# Database Initialization (Optional)
 # ----------------------------
 def init_db():
+    """
+    Ensures indexes for uniqueness and relationships
+    """
     users_collection.create_index("username", unique=True)
     qrcodes_collection.create_index("user_id")

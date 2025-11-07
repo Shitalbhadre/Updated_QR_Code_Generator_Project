@@ -1,6 +1,8 @@
 from modules.utils import users_collection, hash_password, verify_password
 from datetime import datetime
 from bson.objectid import ObjectId
+from modules.utils import users_collection, qrcodes_collection, hash_password, verify_password, add_qrcode, get_user_qrcodes
+
 
 # Signup function for Streamlit
 def signup(username: str, email: str, password: str):

@@ -1,20 +1,10 @@
 import streamlit as st
 import os
 from modules import auth, qr_generator, utils
-from modules.utils import connect_mongo
+from modules.utils import users_collection, qrcodes_collection, hash_password, verify_password, add_qrcode, get_user_qrcodes
 from datetime import datetime
-from bson.objectid import ObjectId
 from streamlit.runtime.scriptrunner import RerunException, get_script_run_ctx
 
-# ------------------------------
-# Function to safely rerun Streamlit
-# ------------------------------
-def rerun():
-    raise RerunException(get_script_run_ctx())
-
-# ------------------------------
-# Page Config
-# ------------------------------
 st.set_page_config(page_title="QR Code Generator", layout="wide")
 
 # ------------------------------
@@ -25,10 +15,11 @@ if "logged_in" not in st.session_state:
     st.session_state.user_id = None
     st.session_state.role = None
 
-# Database Collections
-db = connect_mongo()
-users_collection = db["users"]
-qrcodes_collection = db["qrcodes"]
+# ------------------------------
+# Function to safely rerun Streamlit
+# ------------------------------
+def rerun():
+    raise RerunException(get_script_run_ctx())
 
 # ------------------------------
 # Login / Signup
@@ -47,14 +38,6 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.user_id = user_id
                 st.session_state.role = role
-                # Log login event
-                utils.qrcodes_collection.insert_one({
-                    "user_id": ObjectId(user_id),
-                    "qr_type": "login",
-                    "content": f"User {username} logged in",
-                    "file_path": None,
-                    "created_at": datetime.utcnow()
-                })
                 rerun()
             else:
                 st.error("Invalid credentials")
@@ -65,7 +48,7 @@ if not st.session_state.logged_in:
         email = st.text_input("Email", key="signup_email")
         new_password = st.text_input("Password", type="password", key="signup_password")
         if st.button("Signup", key="signup_btn"):
-            success, msg = auth.signup(new_username, email, new_password)
+            success, msg = auth.register(new_username, email, new_password)
             if success:
                 st.success(msg)
             else:
@@ -85,15 +68,6 @@ else:
     # ----- HOME -----
     if choice == "Home":
         st.title("Welcome to QR Code Generator!")
-        st.info(
-            "Generate QR codes, view history, and manage users if you are an admin.\n\n"
-            "Features:\n"
-            "- Text, URL, Email, WiFi, Contact QR Codes\n"
-            "- QR Color & Background Color\n"
-            "- Logo upload\n"
-            "- History & Download\n"
-            "- Admin user management"
-        )
 
     # ----- GENERATE QR -----
     elif choice == "Generate QR":
@@ -124,16 +98,22 @@ else:
     # ----- HISTORY -----
     elif choice == "History":
         st.title("Your QR Codes")
-        qrcodes = utils.get_user_qrcodes(st.session_state.user_id)
+        qrcodes = get_user_qrcodes(st.session_state.user_id)
+
         if qrcodes:
             for qr in qrcodes:
-                st.image(qr["file_path"], width=150) if qr["file_path"] else None
-                st.write(f"Type: {qr['qr_type']} | Created: {qr['created_at']}")
-                if qr["file_path"]:
-                    st.download_button(
-                        "Download", qr["file_path"], file_name=os.path.basename(qr["file_path"]),
-                        key=f"download_{qr['id']}"
-                    )
+                # Skip QR codes without a valid file path
+                if not qr.get("file_path") or not os.path.exists(qr["file_path"]):
+                    continue
+
+                st.image(qr["file_path"], width=150)
+                st.write(f"Type: {qr['type']} | Created: {qr['created_at']}")
+                st.download_button(
+                    "Download",
+                    qr["file_path"],
+                    file_name=os.path.basename(qr["file_path"]),
+                    key=f"download_{qr['id']}"
+                )
         else:
             st.info("No QR codes found. Generate one!")
 
@@ -144,8 +124,8 @@ else:
         for user in users:
             st.write(f"Username: {user['username']} | Email: {user['email']} | Role: {user['role']}")
             if st.button(f"Delete {user['username']}", key=f"del_{user['id']}"):
-                users_collection.delete_one({"_id": ObjectId(user['id'])})
-                qrcodes_collection.delete_many({"user_id": ObjectId(user['id'])})
+                users_collection.delete_one({"_id": utils.ObjectId(user["id"])})
+                qrcodes_collection.delete_many({"user_id": utils.ObjectId(user["id"])})
                 st.success(f"Deleted {user['username']}")
                 rerun()
 
