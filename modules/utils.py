@@ -51,12 +51,13 @@ def get_user_qrcodes(user_id: str):
         del qr["_id"]
     return qrcodes
 
-def add_qrcode(user_id: str, qr_type: str, content: str, file_path: str):
+def add_qrcode(user_id, qr_data: dict):
+    """
+    qr_data should be a dict with keys: type, content, file_path
+    """
     qrcodes_collection.insert_one({
         "user_id": ObjectId(user_id),
-        "qr_type": qr_type,
-        "content": content,
-        "file_path": file_path,
+        "qr_data": qr_data,
         "created_at": datetime.utcnow()
     })
 

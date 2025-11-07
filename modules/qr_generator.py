@@ -27,5 +27,12 @@ def generate_qr(user_id, content, qr_type="Text", color="#000000", bgcolor="#FFF
     img.save(file_path)
 
     # Save QR code info to MongoDB
-    add_qrcode(user_id, qr_type, content, file_path)
+    # You can combine type, content, and file_path into a dictionary
+    qr_data = {
+        "type": qr_type,
+        "content": content,
+        "file_path": file_path
+    }
+    add_qrcode(user_id, qr_data)
+
     return file_path
