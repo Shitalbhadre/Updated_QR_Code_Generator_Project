@@ -1,24 +1,20 @@
 import streamlit as st
 import os
 from modules import auth, qr_generator, utils
-
-
 from modules.utils import connect_mongo
-from datetime import datetime  # <-- Add this import
-
-db = connect_mongo()
-qrcodes_collection = db["qrcodes"]
-
-# Insert a QR code
- # ...existing code...
-
+from datetime import datetime
+from bson.objectid import ObjectId
 from streamlit.runtime.scriptrunner import RerunException, get_script_run_ctx
 
-# function to safely rerun Streamlit
+# ------------------------------
+# Function to safely rerun Streamlit
+# ------------------------------
 def rerun():
     raise RerunException(get_script_run_ctx())
 
-
+# ------------------------------
+# Page Config
+# ------------------------------
 st.set_page_config(page_title="QR Code Generator", layout="wide")
 
 # ------------------------------
@@ -28,6 +24,11 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.user_id = None
     st.session_state.role = None
+
+# Database Collections
+db = connect_mongo()
+users_collection = db["users"]
+qrcodes_collection = db["qrcodes"]
 
 # ------------------------------
 # Login / Signup
@@ -46,10 +47,10 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.user_id = user_id
                 st.session_state.role = role
-                # Insert login event into MongoDB for this user
-                qrcodes_collection.insert_one({
-                    "user_id": user_id,
-                    "type": "login",
+                # Log login event
+                utils.qrcodes_collection.insert_one({
+                    "user_id": ObjectId(user_id),
+                    "qr_type": "login",
                     "content": f"User {username} logged in",
                     "file_path": None,
                     "created_at": datetime.utcnow()
@@ -126,12 +127,13 @@ else:
         qrcodes = utils.get_user_qrcodes(st.session_state.user_id)
         if qrcodes:
             for qr in qrcodes:
-                qr_id, qr_type, content, file_path, created_at = qr
-                st.image(file_path, width=150)
-                st.write(f"Type: {qr_type} | Created: {created_at}")
-                st.download_button(
-                    "Download", file_path, file_name=os.path.basename(file_path), key=f"download_{qr_id}"
-                )
+                st.image(qr["file_path"], width=150) if qr["file_path"] else None
+                st.write(f"Type: {qr['qr_type']} | Created: {qr['created_at']}")
+                if qr["file_path"]:
+                    st.download_button(
+                        "Download", qr["file_path"], file_name=os.path.basename(qr["file_path"]),
+                        key=f"download_{qr['id']}"
+                    )
         else:
             st.info("No QR codes found. Generate one!")
 
@@ -140,16 +142,11 @@ else:
         st.title("Manage Users")
         users = utils.get_all_users()
         for user in users:
-            user_id, username, email, role = user
-            st.write(f"Username: {username} | Email: {email} | Role: {role}")
-            if st.button(f"Delete {username}", key=f"del_{user_id}"):
-                conn = utils.connect_db()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM users WHERE id=?", (user_id,))
-                cursor.execute("DELETE FROM qrcodes WHERE user_id=?", (user_id,))
-                conn.commit()
-                conn.close()
-                st.success(f"Deleted {username}")
+            st.write(f"Username: {user['username']} | Email: {user['email']} | Role: {user['role']}")
+            if st.button(f"Delete {user['username']}", key=f"del_{user['id']}"):
+                users_collection.delete_one({"_id": ObjectId(user['id'])})
+                qrcodes_collection.delete_many({"user_id": ObjectId(user['id'])})
+                st.success(f"Deleted {user['username']}")
                 rerun()
 
     # ----- LOGOUT -----
